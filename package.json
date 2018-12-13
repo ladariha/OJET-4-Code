@@ -1,0 +1,14 @@
+{
+  "name": "ojet-components-4-code",
+  "version": "1.0.0",
+  "description": "Metadata of Oracle JET components for code completion in Visual Studio Code (1.30+)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "riha.vladimir@gmail.com",
+  "license": "ISC",
+  "dependencies": {
+    "nodegit": "^0.23.0"
+  }
+}
