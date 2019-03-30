@@ -58,26 +58,28 @@ function proccessMetadataFile(jsonFile) {
             const result = {
                 attributes: []
             };
-            result.label = component.name;
+            result.name = component.name;
             if (component.description) {
                 result.description = component.description;
             }
 
-            result.attributes = Object.keys(component.properties || {}).map(label => {
+            result.attributes = Object.keys(component.properties || {}).map(name => {
                 const a = {
-                    label
+                    name
                 };
-                if (component.properties[label].description) {
-                    a.description = component.properties[label].description;
+                if (component.properties[name].description) {
+                    a.description = component.properties[name].description;
                 }
 
-                if (component.properties[label].enumValues) {
-                    const _enumHelp = `Possible values: ${component.properties[label].enumValues.join(", ")}`;
-                    if (a.description) {
-                        a.description += ` ${_enumHelp}`;
-                    } else {
-                        a.description = _enumHelp;
-                    }
+                if (component.properties[name].enumValues) {
+                    //const _enumHelp = `[{"name": ${component.properties[name].enumValues.join("}, {\"name\": ")} }]`;
+
+					a.values = component.properties[name].enumValues.map(value => {
+                        const v = {
+                            name: value
+                        }
+                        return v;
+                    });
                 }
 
                 return a;
@@ -85,7 +87,7 @@ function proccessMetadataFile(jsonFile) {
 
             result.attributes.push(...Object.keys(component.events || {}).map(eventName => {
                 const a = {
-                    label: transforEventName(eventName)
+                    name: transforEventName(eventName)
                 };
                 if (component.events[eventName].description) {
                     a.description = component.events[eventName].description;
@@ -128,7 +130,8 @@ function writeResults(tags) {
             }
 
             fs.writeFile(TARGET, JSON.stringify({
-                tags
+                version: 1,
+				tags
             }), err => {
                 err ? reject(err) : resolve();
             });
