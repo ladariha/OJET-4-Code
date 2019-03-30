@@ -9,6 +9,6 @@
   "author": "riha.vladimir@gmail.com",
   "license": "ISC",
   "dependencies": {
-    "nodegit": "^0.23.0"
+    "nodegit": "^0.23.1"
   }
 }
