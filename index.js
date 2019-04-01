@@ -73,12 +73,8 @@ function proccessMetadataFile(jsonFile) {
 
                 if (component.properties[name].enumValues) {
                     //const _enumHelp = `[{"name": ${component.properties[name].enumValues.join("}, {\"name\": ")} }]`;
-
-					a.values = component.properties[name].enumValues.map(value => {
-                        const v = {
-                            name: value
-                        }
-                        return v;
+                    a.values = component.properties[name].enumValues.map(value => {
+                        return {name: value};
                     });
                 }
 
@@ -131,7 +127,7 @@ function writeResults(tags) {
 
             fs.writeFile(TARGET, JSON.stringify({
                 version: 1,
-				tags
+                tags
             }), err => {
                 err ? reject(err) : resolve();
             });
