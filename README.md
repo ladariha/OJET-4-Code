@@ -8,8 +8,8 @@ This repository contains file `dist/tags.json` that contains OJET components and
 1. Download this JSON file to your PC
 2. Open VS Code settings and reference this file in following way:
 ```
-	"html.experimental.customData": [
-        "\\path\\to\\downloader\\file\\tags.json"
+    "html.experimental.customData": [
+        "/path/to/downloaded/file/tags.json"
     ]
 ```
 3. Optionally restart VS 
