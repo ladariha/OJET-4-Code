@@ -3,149 +3,222 @@
 const git = require("nodegit");
 const path = require("path");
 const fs = require("fs");
+
 const TMP_DIR = path.join(__dirname, "tmp");
 const DIST_DIR = path.join(__dirname, "dist");
 const METADATA_DIR = path.join(TMP_DIR, "dist", "metadata", "components");
 const TARGET = path.join(DIST_DIR, "tags.json");
-const JSON_FILE = /\.json$/i;
 
-function removeDir(dirPath) {
-    return new Promise((resolve, reject) => {
+const URL_OJET_GITHUB = "https://github.com/oracle/oraclejet";
+const MATCH_JSON_FILE = /\.json$/i;
+const MATCH_EVENT_NAME = /[A-Z]+[^A-Z]*|[^A-Z]+/g;
 
-        if (!fs.existsSync(dirPath)) {
-            return resolve();
-        }
+function removeDirAsync(dirPath) {
+	console.info("Removing dir path: " + dirPath);
 
-        fs.readdir(dirPath, (err, files) => {
-            if (err) {
-                return reject(err);
-            }
-            Promise.all(files.map(file => removeFile(path.join(dirPath, file)))) // eslint-disable-line no-use-before-define
-                .then(() => {
-                    fs.rmdir(dirPath, err => err ? reject(err) : resolve());
-                })
-                .catch(reject);
-        });
-    });
+	if (!fs.existsSync(dirPath)) {
+		console.info("Dir path: " + dirPath + " doesn't exist");
+		return Promise.resolve();
+	}
+	return removeFilesAsync(dirPath)
+		.then(() => {
+			console.info("Dir path: " + dirPath + " removed");
+			return Promise.resolve();
+		})
+		.catch((e) => {
+			console.error("Dir path: " + dirPath + " didn't remove");
+			return Promise.reject(e);
+		});
+};
+
+function removeFilesAsync(dirPath) {
+	console.debug("Removing dir: " + dirPath);
+
+	return fs.promises.readdir(dirPath)
+		.then((files) => {
+			if (files.length == 0) {
+				console.debug("Dir: " + dirPath + " empty");
+				return Promise.resolve();
+			}
+			return Promise.all(files.map((file) => {
+				file = path.join(dirPath, file);
+				return fs.promises.lstat(file)
+					.then((stats) => {
+						if (stats.isDirectory()) {
+							return removeFilesAsync(file);
+						}
+						return fs.promises.unlink(file)
+							.then(() => {
+								console.debug("File: " + file + " removed");
+								return Promise.resolve();
+							});
+					});
+			}));
+
+		})
+		.then(() => {
+			return fs.promises.rmdir(dirPath);
+		})
+		.then(() => {
+			console.debug("Dir: " + dirPath + " removed");
+			return Promise.resolve();
+		});
+};
+
+function collectMetadataAsync(directory) {
+	console.info("Collecting metadata...");
+
+	return fs.promises.readdir(directory)
+		.then((files) => {
+			return Promise.all(
+				files.filter(file => file.match(MATCH_JSON_FILE))
+				.map(file => proccessMetadataFileAsync(path.join(directory, file))));
+		})
+		.then((tags) => {
+			console.info("Metadata collected");
+			return Promise.resolve(tags);
+		});
+};
+
+function proccessMetadataFileAsync(jsonFile) {
+	console.debug("Processing metadata file: " + jsonFile);
+
+	return fs.promises.readFile(jsonFile, "utf8")
+		.then((data) => {
+			let component = JSON.parse(data);
+
+			let result = {
+				attributes: []
+			};
+			result.name = component.name;
+			if (component.description) {
+				result.description = component.description;
+			}
+
+			result.attributes = obtainAttributesFromProperties("", component.properties);
+			result.attributes.push(...obtainAttributesFromProperties("on-", component.properties, "-changed"));
+			result.attributes.push(...obtainAttributesFromEvents(component.events));
+
+			return Promise.resolve(result);
+		})
+		.then((result) => {
+			console.debug("Metadata file: " + jsonFile + " processed");
+			return Promise.resolve(result);
+		});
+
+};
+
+function obtainAttributesFromProperties(propertyPrefix, properties, propertySuffix) {
+	let attributes = Object.keys(properties || {})
+		.map(propertyKey => {
+			let name = (propertySuffix) ?
+				propertyPrefix.concat(transformUpperName(propertyKey)).concat(propertySuffix) :
+				transformUpperName(transformPropertyName(propertyPrefix, propertyKey));
+			let property = {
+				name
+			};
+			let description = (propertySuffix) ?
+				"Property change listener function for '".concat(propertyKey).concat("' attribute") :
+				properties[propertyKey].description;
+			if (description) {
+				property.description = description;
+			}
+			if (!propertySuffix && properties[propertyKey].enumValues) {
+				property.values = properties[propertyKey].enumValues.map(value => {
+					return {
+						name: value
+					};
+				});
+			}
+			return property;
+		});
+
+	if ((!propertySuffix)) {
+		Object.keys(properties || {})
+			.map(propertyKey => {
+				if (properties[propertyKey].properties) {
+					attributes.push(...obtainAttributesFromProperties(
+						transformPropertyName(propertyPrefix, propertyKey),
+						properties[propertyKey].properties));
+				}
+			});
+	}
+	return attributes;
 }
 
-function removeFile(filePath) {
-    return new Promise((resolve, reject) => {
-        fs.lstat(filePath, (err, stats) => {
-            if (err) {
-                return reject(err);
-            }
-            if (stats.isDirectory()) {
-                resolve(removeDir(filePath));
-            } else {
-                fs.unlink(filePath, err => err ? reject(err) : resolve());
-            }
-        });
-    });
+function transformPropertyName(propertyPrefix, propertyKey) {
+	return (propertyPrefix && propertyPrefix.length > 0) ? `${propertyPrefix}.${propertyKey}` : propertyKey;
 }
 
-function transforEventName(eventName) {
-    return `on-${eventName.match(/[A-Z]+[^A-Z]*|[^A-Z]+/g).join("-").toLowerCase()}`;
+function obtainAttributesFromEvents(events) {
+	return Object.keys(events || {})
+		.map(eventKey => {
+			let event = {
+				name: transformEventName(eventKey)
+			};
+			if (events[eventKey].description) {
+				event.description = events[eventKey].description;
+			}
+			return event;
+		});
 }
 
-function proccessMetadataFile(jsonFile) {
-    return new Promise((resolve, reject) => {
-        fs.readFile(jsonFile, "utf8", (err, data) => {
-            if (err) {
-                return reject(err);
-            }
-            const component = JSON.parse(data);
-            const result = {
-                attributes: []
-            };
-            result.name = component.name;
-            if (component.description) {
-                result.description = component.description;
-            }
+function transformEventName(eventName) {
+	return "on-".concat(transformUpperName(eventName));
+};
 
-            result.attributes = Object.keys(component.properties || {}).map(name => {
-                const a = {
-                    name
-                };
-                if (component.properties[name].description) {
-                    a.description = component.properties[name].description;
-                }
+function transformUpperName(attributeName) {
+	return attributeName.match(MATCH_EVENT_NAME).join("-").toLowerCase();
+};
 
-                if (component.properties[name].enumValues) {
-                    //const _enumHelp = `[{"name": ${component.properties[name].enumValues.join("}, {\"name\": ")} }]`;
-                    a.values = component.properties[name].enumValues.map(value => {
-                        return {name: value};
-                    });
-                }
+function writeResultsAsync(directory, file, tags) {
+	console.info("Writing results...");
 
-                return a;
-            });
-
-            result.attributes.push(...Object.keys(component.events || {}).map(eventName => {
-                const a = {
-                    name: transforEventName(eventName)
-                };
-                if (component.events[eventName].description) {
-                    a.description = component.events[eventName].description;
-                }
-
-                return a;
-            }));
-
-            resolve(result);
-        });
-    });
+	return fs.promises.mkdir(directory)
+		.then(() => {
+			return fs.promises.writeFile(file, JSON.stringify({
+				version: 1,
+				tags
+			}));
+		})
+		.then(() => {
+			console.info("Results wrote sucess");
+			return Promise.resolve();
+		});
 }
 
-function collectMetadata() {
-    console.log("Collecting metadata...");
-    return new Promise((resolve, reject) => {
-        fs.readdir(METADATA_DIR, (err, files) => {
-            if (err) {
-                return reject(err);
-            }
-
-            Promise
-                .all(
-                    files
-                    .filter(x => x.match(JSON_FILE))
-                    .map(x => proccessMetadataFile(path.join(METADATA_DIR, x)))
-                )
-                .then(components => resolve(components))
-                .catch(reject);
-
-        });
-    });
+function cloneRepositoryAsync(url, dirPath) {
+	console.info("Cloning repository...");
+	console.info("Dir repository: " + dirPath);
+	return fs.promises.mkdir(dirPath)
+		.then(() => {
+			console.info("Repository: " + url);
+			return git.Clone(url, dirPath)
+		})
+		.then(() => {
+			console.info("Repository cloned");
+			return Promise.resolve();
+		})
 }
 
-function writeResults(tags) {
-    return new Promise((resolve, reject) => {
-        fs.mkdir(DIST_DIR, err => {
-            if (err) {
-                return reject(err);
-            }
+{
+	console.log("Init building of Tags");
 
-            fs.writeFile(TARGET, JSON.stringify({
-                version: 1,
-                tags
-            }), err => {
-                err ? reject(err) : resolve();
-            });
-        });
-    });
-
+	Promise.all([removeDirAsync(TMP_DIR), removeDirAsync(DIST_DIR)])
+		.then(() => {
+			return cloneRepositoryAsync(URL_OJET_GITHUB, TMP_DIR);
+		})
+		.then(() => {
+			return collectMetadataAsync(METADATA_DIR);
+		})
+		.then((tags) => {
+			return writeResultsAsync(DIST_DIR, TARGET, tags);
+		})
+		.then(() => {
+			console.log(`Done, definition file is ${TARGET}`);
+		}).catch((e) => {
+			console.error("Building of Tags not completed");
+			console.error(e.message);
+			console.error(e.stack);
+		});
 }
-
-removeDir(TMP_DIR)
-    .then(() => removeDir(DIST_DIR))
-    .then(() => {
-        console.log("Cloning repository...");
-        return git.Clone("https://github.com/oracle/oraclejet", TMP_DIR);
-    })
-    .then(collectMetadata)
-    .then(writeResults)
-    .then(() => console.log(`Done, definition file is ${TARGET}`))
-    .catch(e => {
-        console.error(e.message);
-        console.error(e.stack);
-    });
