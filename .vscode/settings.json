@@ -113,4 +113,6 @@
             "no-use-before-define": 2
         }
     },
+	"html-css-class-completion.excludeGlobPattern": "/{.history,node_modules}/*",
+	"html-css-class-completion.includeGlobPattern": "**/*.{scss,css,html}"
 }
